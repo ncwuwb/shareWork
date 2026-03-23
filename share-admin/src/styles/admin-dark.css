@@ -1,0 +1,51 @@
+/* Navy 深色主题：在 Element Plus dark 变量基础上微调 */
+html.dark {
+  color-scheme: dark;
+  --admin-bg-deep: #0f172a;
+  --admin-bg-panel: #1e293b;
+  --admin-bg-elevated: #243047;
+  --admin-border: #334155;
+  --admin-text: #e2e8f0;
+  --admin-text-muted: #94a3b8;
+  --admin-accent: #38bdf8;
+
+  --el-bg-color: #0f172a;
+  --el-bg-color-page: #0f172a;
+  --el-bg-color-overlay: #1e293b;
+  --el-fill-color-blank: #1e293b;
+  --el-fill-color-light: #243047;
+  --el-fill-color: #334155;
+  --el-text-color-primary: #e2e8f0;
+  --el-text-color-regular: #cbd5e1;
+  --el-text-color-secondary: #94a3b8;
+  --el-text-color-placeholder: #64748b;
+  --el-border-color: #334155;
+  --el-border-color-light: #475569;
+  --el-border-color-lighter: #334155;
+  --el-border-color-extra-light: #1e293b;
+  --el-mask-color: rgba(15, 23, 42, 0.75);
+}
+
+html.dark body {
+  background-color: var(--admin-bg-deep);
+}
+
+/* 表格 / 卡片在深色下的统一背景 */
+html.dark .admin-card.el-card {
+  --el-card-bg-color: var(--admin-bg-panel);
+  border-color: var(--admin-border);
+}
+
+html.dark .admin-card .el-card__header {
+  border-bottom-color: var(--admin-border);
+  color: var(--admin-text);
+}
+
+/* 业务页通用卡片（未加 admin-card 类时） */
+html.dark .el-main .el-card {
+  --el-card-bg-color: var(--admin-bg-panel);
+  border-color: var(--admin-border);
+}
+html.dark .el-main .el-card__header {
+  border-bottom-color: var(--admin-border);
+}

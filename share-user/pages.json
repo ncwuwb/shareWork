@@ -1,0 +1,62 @@
+{
+  "pages": [
+    {
+      "path": "pages/login/login",
+      "style": {
+        "navigationBarTitleText": "用户登录",
+        "navigationBarBackgroundColor": "#0f172a",
+        "navigationBarTextStyle": "white"
+      }
+    },
+    {
+      "path": "pages/hall/hall",
+      "style": {
+        "navigationBarTitleText": "预约大厅",
+        "navigationBarBackgroundColor": "#0f172a",
+        "navigationBarTextStyle": "white"
+      }
+    },
+    {
+      "path": "pages/orders/orders",
+      "style": {
+        "navigationBarTitleText": "我的预约",
+        "navigationBarBackgroundColor": "#0f172a",
+        "navigationBarTextStyle": "white"
+      }
+    },
+    {
+      "path": "pages/messages/messages",
+      "style": {
+        "navigationBarTitleText": "消息中心",
+        "navigationBarBackgroundColor": "#0f172a",
+        "navigationBarTextStyle": "white"
+      }
+    },
+    {
+      "path": "pages/mine/mine",
+      "style": {
+        "navigationBarTitleText": "个人中心",
+        "navigationBarBackgroundColor": "#0f172a",
+        "navigationBarTextStyle": "white"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "共享工位",
+    "navigationBarBackgroundColor": "#0f172a",
+    "backgroundColor": "#08111f"
+  },
+  "tabBar": {
+    "color": "#7c8aa5",
+    "selectedColor": "#38bdf8",
+    "backgroundColor": "#0f172a",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/hall/hall", "text": "大厅" },
+      { "pagePath": "pages/orders/orders", "text": "订单" },
+      { "pagePath": "pages/messages/messages", "text": "消息" },
+      { "pagePath": "pages/mine/mine", "text": "我的" }
+    ]
+  }
+}
