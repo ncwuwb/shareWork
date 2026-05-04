@@ -2,6 +2,8 @@
 import { getToken } from './utils/app.js'
 import { connectNotifySocket, disconnectNotifySocket, refreshUnreadBadge } from './utils/socket.js'
 
+let lastUnreadSyncAt = 0
+
 export default {
   onLaunch() {
     this.notifyHandler = (payload = {}) => {
@@ -17,16 +19,17 @@ export default {
       }
     }
     uni.$on('notify:message', this.notifyHandler)
-    if (getToken()) {
-      refreshUnreadBadge()
-      connectNotifySocket()
-    }
   },
   onShow() {
-    if (getToken()) {
-      refreshUnreadBadge()
-      connectNotifySocket()
+    if (!getToken()) {
+      return
     }
+    const now = Date.now()
+    if (now - lastUnreadSyncAt > 30000) {
+      lastUnreadSyncAt = now
+      refreshUnreadBadge()
+    }
+    connectNotifySocket()
   },
   onHide() {},
   onUnload() {
@@ -34,6 +37,7 @@ export default {
       uni.$off('notify:message', this.notifyHandler)
     }
     disconnectNotifySocket()
+    lastUnreadSyncAt = 0
   },
 }
 </script>

@@ -4,6 +4,18 @@ import { getToken, getUnreadCount, setUnreadCount } from './app.js'
 let socketTask = null
 let reconnectTimer = null
 let closedByUser = false
+let globalListenersBound = false
+
+function bindGlobalSocketListeners(onSocketOpen, onSocketMessage, onSocketClosed) {
+  if (globalListenersBound) {
+    return
+  }
+  globalListenersBound = true
+  uni.onSocketOpen(onSocketOpen)
+  uni.onSocketMessage(onSocketMessage)
+  uni.onSocketClose(onSocketClosed)
+  uni.onSocketError(onSocketClosed)
+}
 
 function getSocketUrl() {
   return `${API_BASE.replace(/^http/i, 'ws')}/ws/notify`
@@ -31,12 +43,12 @@ export function connectNotifySocket() {
   })
   socketTask = task
 
-  task.onOpen(() => {
+  const onSocketOpen = () => {
     uni.$emit('socket:state', { connected: true })
     refreshUnreadBadge()
-  })
+  }
 
-  task.onMessage((event) => {
+  const onSocketMessage = (event) => {
     let payload = {}
     try {
       payload = JSON.parse(event.data)
@@ -45,7 +57,7 @@ export function connectNotifySocket() {
     }
     setUnreadCount(getUnreadCount() + 1)
     uni.$emit('notify:message', payload)
-  })
+  }
 
   const onSocketClosed = () => {
     socketTask = null
@@ -53,12 +65,20 @@ export function connectNotifySocket() {
     scheduleReconnect()
   }
 
-  task.onClose(onSocketClosed)
-  task.onError(onSocketClosed)
+  if (task && typeof task.onOpen === 'function') {
+    task.onOpen(onSocketOpen)
+    task.onMessage(onSocketMessage)
+    task.onClose(onSocketClosed)
+    task.onError(onSocketClosed)
+    return
+  }
+
+  bindGlobalSocketListeners(onSocketOpen, onSocketMessage, onSocketClosed)
 }
 
 export function disconnectNotifySocket() {
   closedByUser = true
+  globalListenersBound = false
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null

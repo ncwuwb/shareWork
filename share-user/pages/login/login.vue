@@ -100,7 +100,7 @@ import { ref } from 'vue'
 import { onUnload } from '@dcloudio/uni-app'
 import { getToken, saveSession, setUnreadCount, showError } from '@/utils/app.js'
 import { request } from '@/utils/request.js'
-import { connectNotifySocket, refreshUnreadBadge } from '@/utils/socket.js'
+import { refreshUnreadBadge } from '@/utils/socket.js'
 
 const phone = ref('')
 const code = ref('')
@@ -185,7 +185,6 @@ async function doLogin() {
     })
     saveSession(response.data.token, response.data.user)
     setUnreadCount(0)
-    connectNotifySocket()
     refreshUnreadBadge()
     const user = response.data.user
     if (user && (user.deptId === null || user.deptId === undefined)) {
