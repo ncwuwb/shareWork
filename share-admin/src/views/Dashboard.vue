@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 import * as echarts from 'echarts'
@@ -9,15 +9,14 @@ const summary = ref(null)
 
 const donutRef = ref(null)
 const barRef = ref(null)
-const ganttRef = ref(null)
 const chartDonut = shallowRef(null)
 const chartBar = shallowRef(null)
-const chartGantt = shallowRef(null)
 
 const areaOptions = ref([])
 const boardAreaId = ref(null)
 const boardDay = ref(new Date().toISOString().slice(0, 10))
 const boardRows = ref([])
+const dashboardReady = ref(false)
 
 const chartText = '#94a3b8'
 const chartLine = '#334155'
@@ -32,10 +31,8 @@ const axisDark = {
 function disposeAll() {
   chartDonut.value?.dispose()
   chartBar.value?.dispose()
-  chartGantt.value?.dispose()
   chartDonut.value = null
   chartBar.value = null
-  chartGantt.value = null
 }
 
 async function loadAreaOptions() {
@@ -138,16 +135,45 @@ function renderBar(rows) {
   })
 }
 
+const boardColumns = computed(() => {
+  const start = 8
+  const end = 20
+  const slots = []
+  for (let i = start; i <= end; i += 2) {
+    slots.push(i)
+  }
+  return slots
+})
+
 function parseDayMs(dayStr) {
   const [y, m, d] = dayStr.split('-').map(Number)
   return new Date(y, m - 1, d).getTime()
 }
 
+function parseDateTimeMs(value) {
+  if (value == null || value === '') return NaN
+  const raw = String(value).trim()
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/)
+  if (m) {
+    const [, y, mo, d, h = '0', mi = '0', s = '0'] = m
+    return new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)).getTime()
+  }
+  const ts = Date.parse(raw.replace(' ', 'T'))
+  return Number.isNaN(ts) ? NaN : ts
+}
+
+function formatClock(hour) {
+  const total = Math.max(0, Math.min(24, Number(hour) || 0))
+  const h = Math.floor(total)
+  const m = Math.round((total - h) * 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
 function segmentToHours(seg, dayStr) {
   const day0 = parseDayMs(dayStr)
-  const msDay = 86400000
-  const s = new Date(String(seg.startTime).replace(' ', 'T')).getTime()
-  const e = new Date(String(seg.endTime).replace(' ', 'T')).getTime()
+  const s = parseDateTimeMs(seg.startTime)
+  const e = parseDateTimeMs(seg.endTime)
+  if (Number.isNaN(s) || Number.isNaN(e)) return null
   let h0 = (s - day0) / 3600000
   let h1 = (e - day0) / 3600000
   h0 = Math.max(0, Math.min(24, h0))
@@ -156,114 +182,62 @@ function segmentToHours(seg, dayStr) {
   return [h0, h1]
 }
 
-const statusColor = {
-  0: '#f59e0b',
-  1: '#22c55e',
-  2: '#64748b',
-  4: '#ef4444',
+const statusMeta = {
+  0: { label: '待签到', color: '#f59e0b' },
+  1: { label: '进行中', color: '#22c55e' },
+  2: { label: '已完成', color: '#64748b' },
+  3: { label: '已取消', color: '#94a3b8' },
+  4: { label: '已违约', color: '#ef4444' },
 }
 
-function renderGantt() {
-  if (!ganttRef.value) return
-  if (!chartGantt.value) chartGantt.value = echarts.init(ganttRef.value, undefined, { renderer: 'canvas' })
+function getStatusMeta(status) {
+  return statusMeta[Number(status)] || { label: '未知', color: '#38bdf8' }
+}
 
-  const categories = boardRows.value.map((r) => r.code)
-  const customData = []
-  boardRows.value.forEach((row, yi) => {
-    for (const seg of row.segments || []) {
-      const [h0, h1] = segmentToHours(seg, boardDay.value)
-      const st = Number(seg.status)
-      customData.push([h0, h1, yi, st, seg.userName || seg.phone || ''])
+function buildBoardRows() {
+  return boardRows.value.map((row) => {
+    const items = (row.segments || [])
+      .map((seg, idx) => {
+        const hours = segmentToHours(seg, boardDay.value)
+        if (!hours) return null
+        const [start, end] = hours
+        const meta = getStatusMeta(seg.status)
+        const timeLabel = `${formatClock(start)}-${formatClock(end)}`
+        return {
+          id: `${row.workstationId}-${seg.orderId ?? idx}`,
+          start,
+          end,
+          label: seg.userName || seg.phone || '预约',
+          timeLabel,
+          status: Number(seg.status),
+          color: meta.color,
+          statusLabel: meta.label,
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.start - b.start)
+    return {
+      ...row,
+      items,
     }
   })
+}
 
+const visibleBoardRows = computed(() => buildBoardRows())
+const hasBoardData = computed(() => visibleBoardRows.value.some((row) => row.items.length > 0))
+
+function findCurrentLine() {
   const now = new Date()
   const dayMs = parseDayMs(boardDay.value)
-  let curLine = null
   if (now >= dayMs && now < dayMs + 86400000) {
-    curLine = (now - dayMs) / 3600000
+    return (now - dayMs) / 3600000
   }
-
-  const series = [
-    {
-      type: 'custom',
-      renderItem(params, api) {
-        const d = params.data
-        if (!d || d.length < 3) return
-        const yIndex = d[2]
-        const start = api.coord([d[0], yIndex])
-        const end = api.coord([d[1], yIndex])
-        const h = api.size([0, 1])[1] * 0.55
-        const w = Math.max(end[0] - start[0], 3)
-        return {
-          type: 'rect',
-          shape: { x: start[0], y: start[1] - h / 2, width: w, height: h },
-          style: { fill: statusColor[d[3]] ?? '#38bdf8', opacity: 0.92 },
-        }
-      },
-      dimensions: ['h0', 'h1', 'y', 'status', 'name'],
-      encode: { x: [0, 1], y: 2 },
-      data: customData,
-    },
-  ]
-  if (curLine != null && categories.length) {
-    series.push({
-      type: 'scatter',
-      symbolSize: 0,
-      data: [],
-      markLine: {
-        silent: true,
-        symbol: 'none',
-        lineStyle: { color: 'rgba(255,255,255,0.35)', width: 1 },
-        label: { show: false },
-        data: [{ xAxis: curLine }],
-      },
-    })
-  }
-
-  chartGantt.value.setOption({
-    backgroundColor: 'transparent',
-    title: {
-      text: '预约看板',
-      left: 'center',
-      top: 4,
-      textStyle: { color: '#e2e8f0', fontSize: 14 },
-    },
-    tooltip: {
-      trigger: 'item',
-      backgroundColor: '#1e293b',
-      borderColor: '#334155',
-      textStyle: { color: '#e2e8f0' },
-      formatter: (p) => {
-        const d = p.data
-        if (!d || !d.length) return ''
-        return `${d[4] || '预约'}<br/>${Number(d[0]).toFixed(1)}时 - ${Number(d[1]).toFixed(1)}时`
-      },
-    },
-    grid: { left: 56, right: 16, top: 40, bottom: 28 },
-    xAxis: {
-      type: 'value',
-      min: 0,
-      max: 24,
-      interval: 2,
-      axisLabel: { formatter: (v) => (v === 24 ? '24:00' : `${String(v).padStart(2, '0')}:00`), color: chartText },
-      splitLine: { lineStyle: { color: chartLine, type: 'dashed' } },
-    },
-    yAxis: {
-      type: 'category',
-      data: categories.length ? categories : ['(无工位)'],
-      inverse: true,
-      axisLine: { lineStyle: { color: chartLine } },
-      axisLabel: { color: chartText, fontSize: 11 },
-    },
-    series,
-  })
+  return null
 }
 
 async function loadBoard() {
   if (boardAreaId.value == null || boardAreaId.value === '') {
     boardRows.value = []
-    renderGantt()
     localStorage.removeItem('admin_board_area_id')
     return
   }
@@ -273,15 +247,20 @@ async function loadBoard() {
       params: { areaSpaceId: boardAreaId.value, day: boardDay.value },
     })
     boardRows.value = res.data || []
-    renderGantt()
   } catch (e) {
     ElMessage.error(e.message || '看板加载失败')
   }
 }
 
-watch(boardDay, () => {
-  if (boardAreaId.value) loadBoard()
-})
+watch(
+  [boardAreaId, boardDay],
+  () => {
+    if (dashboardReady.value && summary.value && boardAreaId.value) {
+      loadBoard()
+    }
+  },
+  { flush: 'post' },
+)
 
 async function exportSummary() {
   try {
@@ -315,12 +294,16 @@ onMounted(async () => {
       boardAreaId.value = n
     }
   }
-  load()
-  loadBoard()
+  dashboardReady.value = true
+  await load()
+  if (boardAreaId.value != null && boardAreaId.value !== '') {
+    await loadBoard()
+  }
   window.addEventListener('resize', onResize)
 })
 
 onUnmounted(() => {
+  dashboardReady.value = false
   window.removeEventListener('resize', onResize)
   disposeAll()
 })
@@ -370,15 +353,43 @@ onUnmounted(() => {
               clearable
               size="small"
               style="width: min(260px, 100%)"
-              @change="loadBoard"
             >
               <el-option v-for="item in areaOptions" :key="item.id" :label="item.path" :value="item.id" />
             </el-select>
             <el-date-picker v-model="boardDay" type="date" value-format="YYYY-MM-DD" size="small" style="width: 140px" />
-            <el-button size="small" type="primary" @click="loadBoard">刷新</el-button>
           </div>
-          <p v-if="!boardAreaId" class="gantt-hint">请选择办公区域后刷新，可显示当日工位占用甘特图</p>
-          <div ref="ganttRef" class="chart-box gantt"></div>
+          <p v-if="!boardAreaId" class="gantt-hint">请选择办公区域后会自动显示当日工位占用情况</p>
+          <div v-else class="board-wrap">
+            <div class="board-header">
+              <span>时间</span>
+              <span v-for="hour in boardColumns" :key="hour">{{ String(hour).padStart(2, '0') }}:00</span>
+            </div>
+            <div class="board-body">
+              <div v-if="!visibleBoardRows.length" class="board-empty">暂无预约数据</div>
+              <div v-for="row in visibleBoardRows" :key="row.workstationId" class="board-row">
+                <div class="board-name" :title="row.code">{{ row.code }}</div>
+                <div class="board-track">
+                  <div class="board-grid">
+                    <span v-for="hour in boardColumns" :key="hour" class="board-grid-line" :style="{ left: `${((hour - 8) / 12) * 100}%` }"></span>
+                  </div>
+                  <div
+                    v-for="item in row.items"
+                    :key="item.id"
+                    class="board-segment"
+                    :style="{
+                      left: `${((item.start - 8) / 12) * 100}%`,
+                      width: `${Math.max(((item.end - item.start) / 12) * 100, 2)}%`,
+                      backgroundColor: item.color,
+                    }"
+                    :title="`${row.code} · ${item.label} · ${item.timeLabel} · ${item.statusLabel}`"
+                  >
+                    <span class="segment-text">{{ item.timeLabel }}</span>
+<!--                    <span class="segment-name">{{ item.label }}</span>-->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -452,9 +463,92 @@ onUnmounted(() => {
   color: #64748b;
   margin: 0 0 8px;
 }
-.gantt {
-  flex: 1;
+.board-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   min-height: 520px;
+  flex: 1;
+}
+.board-header {
+  display: grid;
+  grid-template-columns: 92px repeat(7, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 0 4px 4px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+.board-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+.board-empty {
+  color: #64748b;
+  font-size: 13px;
+  padding: 20px 4px;
+}
+.board-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 8px;
+  align-items: stretch;
+}
+.board-name {
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 18px;
+  padding-top: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-track {
+  position: relative;
+  min-height: 34px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.8));
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  overflow: hidden;
+}
+.board-grid {
+  position: absolute;
+  inset: 0;
+}
+.board-grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(51, 65, 85, 0.75);
+}
+.board-segment {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: white;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.35);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.segment-text {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.segment-name {
+  font-size: 10px;
+  line-height: 1.1;
+  opacity: 0.92;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .actions {
   padding-bottom: 8px;

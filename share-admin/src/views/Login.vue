@@ -7,7 +7,7 @@ import http from '@/api/http'
 const router = useRouter()
 const route = useRoute()
 
-const phone = ref('13800000000')
+const phone = ref('13800001001')
 const password = ref('admin123')
 const loading = ref(false)
 
